@@ -1,0 +1,38 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: ai-image-classifier
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: ai-image-classifier
+  template:
+    metadata:
+      labels:
+        app: ai-image-classifier
+    spec:
+      containers:
+      - name: classifier
+        image: yourdockerhub/ai-image-classifier:latest
+        ports:
+        - containerPort: 5000
+        resources:
+          requests:
+            memory: "512Mi"
+            cpu: "500m"
+          limits:
+            memory: "1Gi"
+            cpu: "1000m"
+        livenessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 30
+          periodSeconds: 10
+        readinessProbe:
+          httpGet:
+            path: /health
+            port: 5000
+          initialDelaySeconds: 5
+          periodSeconds: 5
