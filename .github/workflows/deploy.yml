@@ -6,13 +6,15 @@ on:
 
 env:
   IMAGE_NAME: ai-image-classifier
+  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
 
 jobs:
   build-and-deploy:
     runs-on: ubuntu-latest
     
     steps:
-    - uses: actions/checkout@v3
+    - name: Checkout code
+      uses: actions/checkout@v3
     
     - name: Set up Docker Buildx
       uses: docker/setup-buildx-action@v2
@@ -28,7 +30,9 @@ jobs:
       with:
         context: .
         push: true
-        tags: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
+        tags: |
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:latest
+          ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}
     
     - name: Set up kubectl
       uses: azure/setup-kubectl@v3
@@ -41,8 +45,20 @@ jobs:
         method: kubeconfig
         kubeconfig: ${{ secrets.KUBE_CONFIG }}
     
-    - name: Deploy to Kubernetes
+    - name: Verify Kubernetes connection
+      run: |
+        kubectl cluster-info
+        kubectl get nodes
+    
+    - name: Update deployment image
       run: |
         sed -i "s|yourdockerhub/ai-image-classifier:latest|${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|g" k8s/deployment.yaml
+    
+    - name: Deploy to Kubernetes
+      run: |
         kubectl apply -f k8s/
-        kubectl rollout status deployment/ai-image-classifier
+        kubectl rollout status deployment/ai-image-classifier --timeout=2m
+    
+    - name: Get service URL
+      run: |
+        kubectl get svc ai-image-classifier-service

@@ -1,0 +1,18 @@
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ai-image-classifier-monitor
+  namespace: monitoring
+  labels:
+    release: prometheus
+spec:
+  selector:
+    matchLabels:
+      app: ai-image-classifier
+  endpoints:
+  - port: http
+    path: /metrics
+    interval: 15s
+  namespaceSelector:
+    matchNames:
+    - default
