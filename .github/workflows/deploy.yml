@@ -38,34 +38,62 @@ jobs:
       with:
         version: 'latest'
     
-    - name: Decode Kubeconfig (if base64 encoded)
-      id: decode
+    - name: Create .kube directory
       run: |
+        mkdir -p $HOME/.kube
+        chmod 700 $HOME/.kube
+    
+    - name: Decode and setup kubeconfig
+      run: |
+        # Create the kubeconfig file
+        echo "Creating kubeconfig file..."
+        
         # Check if the secret is base64 encoded (long string with no line breaks)
         if [[ "${{ secrets.KUBE_CONFIG }}" =~ ^[A-Za-z0-9+/=]+$ ]]; then
           echo "Kubeconfig appears to be base64 encoded, decoding..."
           echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
         else
           echo "Kubeconfig is raw YAML, using as-is..."
-          mkdir -p $HOME/.kube
           echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
         fi
+        
+        # Set proper permissions
         chmod 600 $HOME/.kube/config
+        
+        # Verify the file was created
+        echo "Kubeconfig file created at: $HOME/.kube/config"
+        ls -la $HOME/.kube/
+        
+        # Show first few lines (masked for security)
+        echo "First 3 lines of kubeconfig:"
+        head -3 $HOME/.kube/config | sed 's/^/  /'
     
     - name: Verify Kubernetes connection
       run: |
+        echo "Testing connection to Kubernetes cluster..."
         kubectl cluster-info
         kubectl get nodes
+        kubectl get pods -A | head -5
     
     - name: Update deployment image
       run: |
+        echo "Updating deployment with new image: ${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}"
         sed -i "s|usman9872/ai-image-classifier:latest|${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|g" k8s/deployment.yaml
+        echo "Updated deployment.yaml:"
+        grep -A2 "image:" k8s/deployment.yaml
     
     - name: Deploy to Kubernetes
       run: |
+        echo "Applying Kubernetes manifests..."
         kubectl apply -f k8s/
-        kubectl rollout status deployment/ai-image-classifier --timeout=2m
+        echo "Waiting for rollout to complete..."
+        kubectl rollout status deployment/ai-image-classifier --timeout=3m
+        echo "Current pods:"
+        kubectl get pods
     
     - name: Get service URL
       run: |
+        echo "Service information:"
         kubectl get svc ai-image-classifier-service
+        echo "To access the service locally, run:"
+        echo "  kubectl port-forward service/ai-image-classifier-service 8080:80"
