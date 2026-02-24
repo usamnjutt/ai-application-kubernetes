@@ -6,7 +6,6 @@ on:
 
 env:
   IMAGE_NAME: ai-image-classifier
-  DOCKER_USERNAME: ${{ secrets.DOCKER_USERNAME }}
 
 jobs:
   build-and-deploy:
@@ -39,11 +38,19 @@ jobs:
       with:
         version: 'latest'
     
-    - name: Configure Kubernetes context
-      uses: azure/k8s-set-context@v3
-      with:
-        method: kubeconfig
-        kubeconfig: ${{ secrets.KUBE_CONFIG }}
+    - name: Decode Kubeconfig (if base64 encoded)
+      id: decode
+      run: |
+        # Check if the secret is base64 encoded (long string with no line breaks)
+        if [[ "${{ secrets.KUBE_CONFIG }}" =~ ^[A-Za-z0-9+/=]+$ ]]; then
+          echo "Kubeconfig appears to be base64 encoded, decoding..."
+          echo "${{ secrets.KUBE_CONFIG }}" | base64 -d > $HOME/.kube/config
+        else
+          echo "Kubeconfig is raw YAML, using as-is..."
+          mkdir -p $HOME/.kube
+          echo "${{ secrets.KUBE_CONFIG }}" > $HOME/.kube/config
+        fi
+        chmod 600 $HOME/.kube/config
     
     - name: Verify Kubernetes connection
       run: |
@@ -52,7 +59,7 @@ jobs:
     
     - name: Update deployment image
       run: |
-        sed -i "s|yourdockerhub/ai-image-classifier:latest|${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|g" k8s/deployment.yaml
+        sed -i "s|usman9872/ai-image-classifier:latest|${{ secrets.DOCKER_USERNAME }}/${{ env.IMAGE_NAME }}:${{ github.sha }}|g" k8s/deployment.yaml
     
     - name: Deploy to Kubernetes
       run: |
