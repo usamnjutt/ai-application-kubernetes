@@ -1,0 +1,37 @@
+apiVersion: helm.toolkit.fluxcd.io/v2beta1
+kind: HelmRelease
+metadata:
+  name: prometheus
+  namespace: monitoring
+spec:
+  chart:
+    spec:
+      chart: kube-prometheus-stack
+      version: "45.x"
+      sourceRef:
+        kind: HelmRepository
+        name: prometheus-community
+        namespace: monitoring
+  interval: 1h
+  values:
+    # From values.yaml above
+    prometheus:
+      prometheusSpec:
+        retention: 7d
+    grafana:
+      adminPassword: prom-operator
+      dashboardProviders:
+        dashboardproviders.yaml:
+          apiVersion: 1
+          providers:
+          - name: 'kubernetes'
+            orgId: 1
+            folder: 'Kubernetes'
+            type: file
+            options:
+              path: /var/lib/grafana/dashboards/kubernetes
+      dashboards:
+        kubernetes:
+          cluster-monitoring:
+            gnetId: 315
+            datasource: Prometheus

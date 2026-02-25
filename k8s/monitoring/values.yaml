@@ -1,0 +1,42 @@
+# Prometheus configuration
+prometheus:
+  prometheusSpec:
+    retention: 7d  # Keep data for 7 days
+    resources:
+      requests:
+        memory: 400Mi
+        cpu: 200m
+
+# Grafana configuration
+grafana:
+  adminPassword: prom-operator  # Default password
+  service:
+    type: NodePort
+    port: 80
+    targetPort: 3000
+  
+  # Pre-configured dashboards
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+      - name: 'kubernetes'
+        orgId: 1
+        folder: 'Kubernetes'
+        type: file
+        disableDeletion: false
+        editable: true
+        options:
+          path: /var/lib/grafana/dashboards/kubernetes
+
+  # Dashboards to auto-import
+  dashboards:
+    kubernetes:
+      cluster-monitoring:
+        gnetId: 315  # Kubernetes Cluster Monitoring
+        revision: 1
+        datasource: Prometheus
+      pods-monitoring:
+        gnetId: 6417  # Kubernetes Pods Monitoring
+        revision: 1
+        datasource: Prometheus

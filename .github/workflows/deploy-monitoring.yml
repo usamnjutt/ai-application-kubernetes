@@ -1,0 +1,103 @@
+name: Deploy Monitoring Stack
+
+on:
+  push:
+    paths:
+      - 'k8s/monitoring/**'  # Run only when monitoring files change
+      - '.github/workflows/deploy-monitoring.yml'
+  workflow_dispatch:  # Allow manual trigger
+
+env:
+  IMAGE_NAME: ai-image-classifier
+
+jobs:
+  deploy-monitoring:
+    runs-on: ubuntu-latest
+    
+    steps:
+    - name: Checkout code
+      uses: actions/checkout@v3
+    
+    - name: Create kind cluster
+      uses: helm/kind-action@v1
+      with:
+        cluster_name: kind
+        version: v0.20.0
+        wait: 120s
+    
+    - name: Install Helm
+      uses: azure/setup-helm@v3
+      with:
+        version: 'latest'
+    
+    - name: Add Prometheus Helm repository
+      run: |
+        helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
+        helm repo update
+    
+    - name: Create monitoring namespace
+      run: |
+        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+    
+    - name: Install Prometheus Stack with Custom Values
+      run: |
+        # Install with our custom values
+        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+          --namespace monitoring \
+          --values k8s/monitoring/values.yaml \
+          --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
+          --wait --timeout 10m
+    
+    - name: Verify Installation
+      run: |
+        echo "=== Checking Pods ==="
+        kubectl get pods -n monitoring
+        
+        echo -e "\n=== Checking Services ==="
+        kubectl get svc -n monitoring
+        
+        echo -e "\n=== Checking CRDs ==="
+        kubectl get crd | grep monitoring.coreos.com | head -5
+    
+    - name: Wait for Prometheus to be ready
+      run: |
+        kubectl wait --namespace monitoring \
+          --for=condition=ready pod \
+          --selector=app.kubernetes.io/instance=prometheus \
+          --timeout=300s
+    
+    - name: Deploy ServiceMonitor for our app
+      run: |
+        # Check if ServiceMonitor file exists
+        if [ -f "k8s/service-monitor.yaml" ]; then
+          kubectl apply -f k8s/service-monitor.yaml
+          echo "ServiceMonitor applied"
+        else
+          echo "No ServiceMonitor found, skipping"
+        fi
+    
+    - name: Get Grafana admin password
+      run: |
+        PASSWORD=$(kubectl get secret -n monitoring prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
+        echo "Grafana admin password: $PASSWORD"
+        echo "::notice title=Grafana Password::$PASSWORD"
+    
+    - name: Port-forward and test (optional)
+      run: |
+        # Start port-forward in background
+        kubectl port-forward -n monitoring service/prometheus-grafana 3000:80 &
+        PF_PID=$!
+        sleep 10
+        
+        # Test connection
+        curl -s http://localhost:3000/api/health || echo "Grafana not yet ready"
+        
+        # Kill port-forward
+        kill $PF_PID 2>/dev/null || true
+    
+    - name: Export monitoring endpoints
+      run: |
+        echo "=== Monitoring Access Information ==="
+        echo "Grafana: kubectl port-forward -n monitoring service/prometheus-grafana 3000:80"
+        echo "Prometheus: kubectl port-forward -n monitoring service/prometheus-kube-prometheus-prometheus 9090:9090"
+        echo "Alertmanager: kubectl port-forward -n monitoring service/prometheus-kube-prometheus-alertmanager 9093:9093"
