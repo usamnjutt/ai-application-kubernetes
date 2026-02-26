@@ -26,6 +26,19 @@ jobs:
         version: v0.20.0
         wait: 120s
 
+    - name: Delete Helm release secrets
+      run: |
+        echo "=== DELETING HELM SECRETS ==="
+        # Delete Helm release secrets in all namespaces
+        kubectl delete secret -n monitoring-cicd -l name=prometheus 2>/dev/null || true
+        kubectl delete secret -n monitoring-cicd -l owner=helm 2>/dev/null || true
+        kubectl delete secret -n monitoring-cicd -l status=failed 2>/dev/null || true
+    
+        # Delete ALL Helm-related secrets in any namespace
+        kubectl get secrets --all-namespaces -l name=prometheus -o name | xargs -r kubectl delete 2>/dev/null || true
+    
+        echo "=== HELM SECRETS DELETED ==="
+
     - name: Nuclear cleanup before install
       run: |
         echo "=== STARTING CLEANUP ==="
