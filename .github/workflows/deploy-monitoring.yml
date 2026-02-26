@@ -35,9 +35,17 @@ jobs:
         helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
         helm repo update
     
-    - name: Create monitoring namespace
+    - name: Create CI/CD monitoring namespace
       run: |
-        kubectl create namespace monitoring --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace monitoring-cicd --dry-run=client -o yaml | kubectl apply -f -
+
+    - name: Install Prometheus Stack in CI/CD namespace
+      run: |
+        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+          --namespace monitoring-cicd \
+          --values k8s/monitoring/values.yaml \
+          --create-namespace \
+          --wait
     
     - name: Install Prometheus Stack with Custom Values
       run: |
