@@ -19,36 +19,58 @@ jobs:
     - name: Checkout code
       uses: actions/checkout@v3
 
-    - name: Nuclear cleanup before install
-      run: |
-        echo "Performing complete cleanup of any existing resources..."
-    
-        # Delete namespace if exists
-        kubectl delete namespace monitoring-cicd --force --grace-period=0 2>/dev/null || true
-    
-        # Delete all ClusterRoles
-        kubectl delete clusterrole prometheus-grafana-clusterrole 2>/dev/null || true
-        kubectl delete clusterrole prometheus-kube-prometheus-operator 2>/dev/null || true
-        kubectl delete clusterrole prometheus-kube-prometheus-prometheus 2>/dev/null || true
-        kubectl delete clusterrole prometheus-kube-state-metrics 2>/dev/null || true
-    
-        # Delete all ClusterRoleBindings
-        kubectl delete clusterrolebinding prometheus-grafana-clusterrolebinding 2>/dev/null || true
-        kubectl delete clusterrolebinding prometheus-kube-prometheus-operator 2>/dev/null || true
-        kubectl delete clusterrolebinding prometheus-kube-prometheus-prometheus 2>/dev/null || true
-        kubectl delete clusterrolebinding prometheus-kube-state-metrics 2>/dev/null || true
-    
-        # Wait for cleanup
-        sleep 10
-        echo "Cleanup complete!"
-
     - name: Create kind cluster
       uses: helm/kind-action@v1
       with:
         cluster_name: kind
         version: v0.20.0
         wait: 120s
+
+    - name: Nuclear cleanup before install
+      run: |
+        echo "=== STARTING CLEANUP ==="
     
+        # Show what exists before cleanup
+        echo "=== BEFORE CLEANUP ==="
+        kubectl get clusterrole | grep prometheus || echo "No ClusterRoles found"
+        kubectl get clusterrolebinding | grep prometheus || echo "No ClusterRoleBindings found"
+        kubectl get crd | grep monitoring.coreos.com || echo "No CRDs found"
+    
+        # Delete namespace
+        echo "Deleting namespace..."
+        kubectl delete namespace monitoring-cicd --force --grace-period=0 2>/dev/null || echo "Namespace not found"
+    
+        # Delete ClusterRoles
+        echo "Deleting ClusterRoles..."
+        for role in prometheus-grafana-clusterrole \
+                    prometheus-kube-prometheus-operator \
+                    prometheus-kube-prometheus-prometheus \
+                    prometheus-kube-state-metrics; do
+          kubectl delete clusterrole $role 2>/dev/null && echo "  Deleted $role" || echo "  $role not found"
+        done
+    
+        # Delete ClusterRoleBindings
+        echo "Deleting ClusterRoleBindings..."
+        for binding in prometheus-grafana-clusterrolebinding \
+                       prometheus-kube-prometheus-operator \
+                       prometheus-kube-prometheus-prometheus \
+                       prometheus-kube-state-metrics; do
+          kubectl delete clusterrolebinding $binding 2>/dev/null && echo "  Deleted $binding" || echo "  $binding not found"
+        done
+    
+        # Delete CRDs
+        echo "Deleting CRDs..."
+        for crd in $(kubectl get crd | grep monitoring.coreos.com | awk '{print $1}' 2>/dev/null); do
+          kubectl delete crd $crd 2>/dev/null && echo "  Deleted $crd"
+        done
+    
+        # Show what's left after cleanup
+        echo "=== AFTER CLEANUP ==="
+        kubectl get clusterrole | grep prometheus || echo "No ClusterRoles left"
+        kubectl get clusterrolebinding | grep prometheus || echo "No ClusterRoleBindings left"
+    
+        echo "=== CLEANUP COMPLETE ==="
+
     - name: Install Helm
       uses: azure/setup-helm@v3
       with:
