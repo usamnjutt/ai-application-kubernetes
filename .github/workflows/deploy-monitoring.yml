@@ -62,10 +62,10 @@ jobs:
           --timeout 10m
 
     ### 🔴 THIS IS THE RIGHT PLACE FOR DEBUGGING ###
-    - name: 🔴 DEBUG - Cluster is LIVE! Inspect now
-      uses: mxschmitt/action-tmate@v3
-      with:
-        limit-access-to-actor: true
+#    - name: 🔴 DEBUG - Cluster is LIVE! Inspect now
+ #     uses: mxschmitt/action-tmate@v3
+  #    with:
+   #     limit-access-to-actor: true
     ### Workflow will PAUSE here for you to explore ###
 
     - name: Verify Installation
@@ -84,12 +84,10 @@ jobs:
 
     - name: Deploy ServiceMonitor
       run: |
-        if [ -f "k8s/service-monitor.yaml" ]; then
-          # Update namespace in ServiceMonitor if needed
-          sed -i 's/namespace: monitoring/namespace: monitoring-cicd/g' k8s/service-monitor.yaml
-          kubectl apply -f k8s/service-monitor.yaml
-          echo "ServiceMonitor applied"
-        fi
+       if [ -f "k8s/service-monitor.yaml" ]; then
+         kubectl apply -f k8s/service-monitor.yaml
+         echo "ServiceMonitor applied"
+       fi
 
     - name: Export monitoring endpoints
       run: |
