@@ -3,10 +3,7 @@ name: Deploy Monitoring Stack
 on:
   push:
     branches: [ main ]
-      # paths:
-      # - 'k8s/monitoring/**'  # Run only when monitoring files change
-      # - '.github/workflows/deploy-monitoring.yml'
-  workflow_dispatch:  # Allow manual trigger
+  workflow_dispatch:
 
 env:
   IMAGE_NAME: ai-image-classifier
@@ -14,12 +11,8 @@ env:
 jobs:
   deploy-monitoring:
     runs-on: ubuntu-latest
-    
+
     steps:
-
-    - name: Debug with tmate
-      uses: mxschmitt/action-tmate@v3
-
     - name: Checkout code
       uses: actions/checkout@v3
 
@@ -33,142 +26,73 @@ jobs:
     - name: Delete Helm release secrets
       run: |
         echo "=== DELETING HELM SECRETS ==="
-        # Delete Helm release secrets in all namespaces
         kubectl delete secret -n monitoring-cicd -l name=prometheus 2>/dev/null || true
         kubectl delete secret -n monitoring-cicd -l owner=helm 2>/dev/null || true
         kubectl delete secret -n monitoring-cicd -l status=failed 2>/dev/null || true
-    
-        # Delete ALL Helm-related secrets in any namespace
-        kubectl get secrets --all-namespaces -l name=prometheus -o name | xargs -r kubectl delete 2>/dev/null || true
-    
         echo "=== HELM SECRETS DELETED ==="
 
     - name: Nuclear cleanup before install
       run: |
         echo "=== STARTING CLEANUP ==="
-    
-        # Show what exists before cleanup
-        echo "=== BEFORE CLEANUP ==="
-        kubectl get clusterrole | grep prometheus || echo "No ClusterRoles found"
-        kubectl get clusterrolebinding | grep prometheus || echo "No ClusterRoleBindings found"
-        kubectl get crd | grep monitoring.coreos.com || echo "No CRDs found"
-    
-        # Delete namespace
-        echo "Deleting namespace..."
         kubectl delete namespace monitoring-cicd --force --grace-period=0 2>/dev/null || echo "Namespace not found"
-    
-        # Delete ClusterRoles
-        echo "Deleting ClusterRoles..."
-        for role in prometheus-grafana-clusterrole \
-                    prometheus-kube-prometheus-operator \
-                    prometheus-kube-prometheus-prometheus \
-                    prometheus-kube-state-metrics; do
-          kubectl delete clusterrole $role 2>/dev/null && echo "  Deleted $role" || echo "  $role not found"
-        done
-    
-        # Delete ClusterRoleBindings
-        echo "Deleting ClusterRoleBindings..."
-        for binding in prometheus-grafana-clusterrolebinding \
-                       prometheus-kube-prometheus-operator \
-                       prometheus-kube-prometheus-prometheus \
-                       prometheus-kube-state-metrics; do
-          kubectl delete clusterrolebinding $binding 2>/dev/null && echo "  Deleted $binding" || echo "  $binding not found"
-        done
-    
-        # Delete CRDs
-        echo "Deleting CRDs..."
-        for crd in $(kubectl get crd | grep monitoring.coreos.com | awk '{print $1}' 2>/dev/null); do
-          kubectl delete crd $crd 2>/dev/null && echo "  Deleted $crd"
-        done
-    
-        # Show what's left after cleanup
-        echo "=== AFTER CLEANUP ==="
-        kubectl get clusterrole | grep prometheus || echo "No ClusterRoles left"
-        kubectl get clusterrolebinding | grep prometheus || echo "No ClusterRoleBindings left"
-    
+        
+        # Delete ClusterRoles and bindings
+        kubectl delete clusterrole -l app.kubernetes.io/instance=prometheus 2>/dev/null || true
+        kubectl delete clusterrolebinding -l app.kubernetes.io/instance=prometheus 2>/dev/null || true
         echo "=== CLEANUP COMPLETE ==="
 
     - name: Install Helm
       uses: azure/setup-helm@v3
-      with:
-        version: 'latest'
-    
+
     - name: Add Prometheus Helm repository
       run: |
         helm repo add prometheus-community https://prometheus-community.github.io/helm-charts
         helm repo update
-    
-    - name: Create CI/CD monitoring namespace
+
+    - name: Create monitoring namespace
       run: |
-        kubectl create namespace monitoring-cicd --dry-run=client -o yaml | kubectl apply -f -
+        kubectl create namespace monitoring-cicd
 
     - name: Install Prometheus Stack
       run: |
-        # Check if values file exists
-        if [ -f "k8s/monitoring/values.yaml" ]; then
-          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-            --namespace monitoring-cicd \
-            --values k8s/monitoring/values.yaml \
-            --wait \
-            --timeout 10m
-        else
-          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-            --namespace monitoring-cicd \
-            --set grafana.adminPassword=prom-operator \
-            --wait \
-            --timeout 10m
-        fi
-    
+        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+          --namespace monitoring-cicd \
+          --set grafana.adminPassword=prom-operator \
+          --wait \
+          --timeout 10m
+
+    ### 🔴 THIS IS THE RIGHT PLACE FOR DEBUGGING ###
+    - name: 🔴 DEBUG - Cluster is LIVE! Inspect now
+      uses: mxschmitt/action-tmate@v3
+      with:
+        limit-access-to-actor: true
+    ### Workflow will PAUSE here for you to explore ###
+
     - name: Verify Installation
       run: |
         echo "=== Checking Pods ==="
         kubectl get pods -n monitoring-cicd
-        
+
         echo -e "\n=== Checking Services ==="
         kubectl get svc -n monitoring-cicd
-        
-        echo -e "\n=== Checking CRDs ==="
-        kubectl get crd | grep monitoring.coreos.com | head -5
-    
-    - name: Wait for Prometheus to be ready
-      run: |
-        kubectl wait --namespace monitoring-cicd \
-          --for=condition=ready pod \
-          --selector=app.kubernetes.io/instance=prometheus \
-          --timeout=300s
-    
-    - name: Deploy ServiceMonitor for our app
-      run: |
-        # Check if ServiceMonitor file exists
-        if [ -f "k8s/service-monitor.yaml" ]; then
-          kubectl apply -f k8s/service-monitor.yaml
-          echo "ServiceMonitor applied"
-        else
-          echo "No ServiceMonitor found, skipping"
-        fi
-    
+
     - name: Get Grafana admin password
       run: |
-        PASSWORD=$(kubectl get secret -n monitoring prometheus-grafana -o jsonpath="{.data.admin-password}" | base64 --decode)
+        PASSWORD=$(kubectl get secret -n monitoring-cicd prometheus-grafana \
+          -o jsonpath="{.data.admin-password}" | base64 --decode)
         echo "Grafana admin password: $PASSWORD"
-        echo "::notice title=Grafana Password::$PASSWORD"
-    
-    - name: Port-forward and test (optional)
+
+    - name: Deploy ServiceMonitor
       run: |
-        # Start port-forward in background
-        kubectl port-forward -n monitoring service/prometheus-grafana 3000:80 &
-        PF_PID=$!
-        sleep 10
-        
-        # Test connection
-        curl -s http://localhost:3000/api/health || echo "Grafana not yet ready"
-        
-        # Kill port-forward
-        kill $PF_PID 2>/dev/null || true
-    
+        if [ -f "k8s/service-monitor.yaml" ]; then
+          # Update namespace in ServiceMonitor if needed
+          sed -i 's/namespace: monitoring/namespace: monitoring-cicd/g' k8s/service-monitor.yaml
+          kubectl apply -f k8s/service-monitor.yaml
+          echo "ServiceMonitor applied"
+        fi
+
     - name: Export monitoring endpoints
       run: |
         echo "=== Monitoring Access Information ==="
-        echo "Grafana: kubectl port-forward -n monitoring service/prometheus-grafana 3000:80"
-        echo "Prometheus: kubectl port-forward -n monitoring service/prometheus-kube-prometheus-prometheus 9090:9090"
-        echo "Alertmanager: kubectl port-forward -n monitoring service/prometheus-kube-prometheus-alertmanager 9093:9093"
+        echo "Grafana: kubectl port-forward -n monitoring-cicd service/prometheus-grafana 3000:80"
+        echo "Prometheus: kubectl port-forward -n monitoring-cicd service/prometheus-kube-prometheus-prometheus 9090:9090"
