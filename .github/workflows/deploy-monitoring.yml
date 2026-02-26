@@ -18,7 +18,30 @@ jobs:
     steps:
     - name: Checkout code
       uses: actions/checkout@v3
+
+    - name: Nuclear cleanup before install
+      run: |
+        echo "Performing complete cleanup of any existing resources..."
     
+        # Delete namespace if exists
+        kubectl delete namespace monitoring-cicd --force --grace-period=0 2>/dev/null || true
+    
+        # Delete all ClusterRoles
+        kubectl delete clusterrole prometheus-grafana-clusterrole 2>/dev/null || true
+        kubectl delete clusterrole prometheus-kube-prometheus-operator 2>/dev/null || true
+        kubectl delete clusterrole prometheus-kube-prometheus-prometheus 2>/dev/null || true
+        kubectl delete clusterrole prometheus-kube-state-metrics 2>/dev/null || true
+    
+        # Delete all ClusterRoleBindings
+        kubectl delete clusterrolebinding prometheus-grafana-clusterrolebinding 2>/dev/null || true
+        kubectl delete clusterrolebinding prometheus-kube-prometheus-operator 2>/dev/null || true
+        kubectl delete clusterrolebinding prometheus-kube-prometheus-prometheus 2>/dev/null || true
+        kubectl delete clusterrolebinding prometheus-kube-state-metrics 2>/dev/null || true
+    
+        # Wait for cleanup
+        sleep 10
+        echo "Cleanup complete!"
+
     - name: Create kind cluster
       uses: helm/kind-action@v1
       with:
