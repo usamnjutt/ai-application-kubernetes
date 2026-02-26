@@ -2,6 +2,7 @@ name: Deploy Monitoring Stack
 
 on:
   push:
+    branches: [ main ]
     paths:
       - 'k8s/monitoring/**'  # Run only when monitoring files change
       - '.github/workflows/deploy-monitoring.yml'
