@@ -98,22 +98,22 @@ jobs:
       run: |
         kubectl create namespace monitoring-cicd --dry-run=client -o yaml | kubectl apply -f -
 
-    - name: Install Prometheus Stack in CI/CD namespace
+    - name: Install Prometheus Stack
       run: |
-        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-          --namespace monitoring-cicd \
-          --values k8s/monitoring/values.yaml \
-          --create-namespace \
-          --wait
-    
-    - name: Install Prometheus Stack with Custom Values
-      run: |
-        # Install with our custom values
-        helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
-          --namespace monitoring \
-          --values k8s/monitoring/values.yaml \
-          --set prometheus.prometheusSpec.serviceMonitorSelectorNilUsesHelmValues=false \
-          --wait --timeout 10m
+        # Check if values file exists
+        if [ -f "k8s/monitoring/values.yaml" ]; then
+          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+            --namespace monitoring-cicd \
+            --values k8s/monitoring/values.yaml \
+            --wait \
+            --timeout 10m
+        else
+          helm upgrade --install prometheus prometheus-community/kube-prometheus-stack \
+            --namespace monitoring-cicd \
+            --set grafana.adminPassword=prom-operator \
+            --wait \
+            --timeout 10m
+        fi
     
     - name: Verify Installation
       run: |
