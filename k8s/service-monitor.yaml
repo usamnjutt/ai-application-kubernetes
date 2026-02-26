@@ -2,7 +2,7 @@ apiVersion: monitoring.coreos.com/v1
 kind: ServiceMonitor
 metadata:
   name: ai-image-classifier-monitor
-  namespace: monitoring
+  namespace: monitoring-cicd
   labels:
     release: prometheus
 spec:
